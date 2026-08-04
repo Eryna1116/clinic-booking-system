@@ -1,27 +1,18 @@
 #!/bin/bash
-# ==========================================
-# AUTO STARTUP EC2 SCRIPT
-# Run this once to launch EC2 with auto-startup
-# ==========================================
 
 set -e
-
-# ==========================================
-# CONFIGURATION (UPDATE THESE!)
-# ==========================================
+#CONFIGURATION 
 AWS_REGION="us-east-1"
 INSTANCE_TYPE="t2.micro"
-KEY_NAME="my-aws-keypair"         
+KEY_NAME="vockey"         
 SECURITY_GROUP_NAME="clinic-app-sg"
-GITHUB_REPO="https://github.com/clinic/clinic-booking-app.git"  
+GITHUB_REPO="https://github.com/Eryna1116/clinic-booking-system.git"  
 
 echo "========================================"
 echo "🚀 AUTO STARTUP EC2 DEPLOYMENT"
 echo "========================================"
 
-# ==========================================
-# STEP 1: CHECK AWS CLI
-# ==========================================
+#check AWS CLI
 echo "📋 Checking AWS CLI..."
 if ! command -v aws &> /dev/null; then
     echo "❌ AWS CLI not found! Installing..."
@@ -32,9 +23,7 @@ if ! command -v aws &> /dev/null; then
 fi
 echo "✅ AWS CLI is ready"
 
-# ==========================================
-# STEP 2: CHECK SSH KEY
-# ==========================================
+#check SSH key 
 echo "🔑 Checking SSH key..."
 if ! aws ec2 describe-key-pairs --key-names $KEY_NAME --region $AWS_REGION &> /dev/null; then
     echo "❌ Key pair '$KEY_NAME' not found!"
@@ -46,9 +35,7 @@ else
     echo "✅ Key pair '$KEY_NAME' exists"
 fi
 
-# ==========================================
-# STEP 3: CREATE SECURITY GROUP
-# ==========================================
+#security group
 echo "🛡️ Creating Security Group..."
 SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=$SECURITY_GROUP_NAME" --region $AWS_REGION --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null)
 
@@ -69,9 +56,7 @@ else
     echo "✅ Security group exists: $SG_ID"
 fi
 
-# ==========================================
-# STEP 4: CREATE USER-DATA SCRIPT (AUTO-STARTUP ON BOOT)
-# ==========================================
+#user data
 echo "📝 Creating auto-startup user-data script..."
 
 USER_DATA='#!/bin/bash
@@ -212,13 +197,11 @@ echo "🔌 API: http://$PUBLIC_IP/api/appointments"
 echo "========================================"
 '
 
-# ==========================================
-# STEP 5: LAUNCH EC2 WITH AUTO-STARTUP USER-DATA
-# ==========================================
+#launch EC2 with auto-startup user-data
 echo "🖥️ Launching EC2 instance with auto-startup..."
 
 INSTANCE_ID=$(aws ec2 run-instances \
-    --image-id ami-0c55b159cbfafe1f0 \
+    --image-id ami-03234103a47fb1a6f \
     --instance-type $INSTANCE_TYPE \
     --key-name $KEY_NAME \
     --security-group-ids $SG_ID \
@@ -230,9 +213,7 @@ INSTANCE_ID=$(aws ec2 run-instances \
 
 echo "✅ EC2 instance launched: $INSTANCE_ID"
 
-# ==========================================
-# STEP 6: ENABLE AUTO-START ON INSTANCE REBOOT
-# ==========================================
+#enable auto-start on instance reboot
 echo "🔄 Enabling auto-start on instance reboot..."
 aws ec2 modify-instance-attribute \
     --instance-id $INSTANCE_ID \
@@ -242,9 +223,6 @@ aws ec2 modify-instance-attribute \
 
 echo "✅ Auto-start configured! Instance will restart on reboot."
 
-# ==========================================
-# STEP 7: WAIT FOR INSTANCE
-# ==========================================
 echo "⏳ Waiting for instance to be ready..."
 aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region $AWS_REGION
 
@@ -258,9 +236,7 @@ PUBLIC_IP=$(aws ec2 describe-instances \
 echo "✅ Instance is running!"
 echo "🌐 Public IP: $PUBLIC_IP"
 
-# ==========================================
-# STEP 8: SAVE CONNECTION INFO
-# ==========================================
+#save connection info
 cat > ec2_info.txt << EOF
 ========================================
 CLINIC APP EC2 INSTANCE INFO
@@ -297,9 +273,6 @@ EOF
 
 echo "✅ Connection info saved to ec2_info.txt"
 
-# ==========================================
-# STEP 9: TEST CONNECTION
-# ==========================================
 echo "🔍 Testing connection..."
 sleep 60
 
@@ -317,9 +290,6 @@ else
     fi
 fi
 
-# ==========================================
-# DEPLOYMENT COMPLETE
-# ==========================================
 echo "========================================"
 echo "✅ DEPLOYMENT COMPLETE!"
 echo "========================================"
