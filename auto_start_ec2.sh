@@ -13,7 +13,7 @@ AWS_REGION="us-east-1"
 INSTANCE_TYPE="t2.micro"
 KEY_NAME="my-aws-keypair"         
 SECURITY_GROUP_NAME="clinic-app-sg"
-GITHUB_REPO="https://github.com/clinic/clinic-booking-app.git"  # CHANGE THIS
+GITHUB_REPO="https://github.com/clinic/clinic-booking-app.git"  
 
 echo "========================================"
 echo "🚀 AUTO STARTUP EC2 DEPLOYMENT"
