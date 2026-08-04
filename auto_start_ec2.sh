@@ -60,10 +60,6 @@ fi
 echo "📝 Creating auto-startup user-data script..."
 
 USER_DATA='#!/bin/bash
-# ==========================================
-# EC2 AUTO-STARTUP SCRIPT
-# This runs automatically when EC2 starts
-# ==========================================
 
 set -e
 
@@ -71,21 +67,17 @@ echo "========================================"
 echo "🚀 EC2 AUTO-STARTUP SCRIPT"
 echo "========================================"
 
-# 1. SYSTEM UPDATE
 echo "📦 Updating system..."
 sudo apt-get update -y
 sudo apt-get upgrade -y
 
-# 2. INSTALL DEPENDENCIES
 echo "📦 Installing dependencies..."
 sudo apt-get install -y python3 python3-pip python3-venv nginx git curl wget
 
-# 3. INSTALL NODE.JS
 echo "📦 Installing Node.js..."
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
-# 4. CLONE REPOSITORY
 echo "📂 Cloning repository..."
 cd /home/ubuntu
 if [ -d "clinic-booking-app" ]; then
@@ -97,7 +89,6 @@ else
     cd clinic-booking-app
 fi
 
-# 5. SETUP BACKEND
 echo "🐍 Setting up Python backend..."
 cd backend
 python3 -m venv venv
@@ -105,7 +96,6 @@ source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# 6. SETUP DATABASE
 echo "🗄️ Setting up database..."
 python3 -c "
 from app import app, db
@@ -113,7 +103,6 @@ with app.app_context():
     db.create_all()
     print('\''✅ Database created!\'')"
 
-# 7. SETUP GUNICORN SERVICE (AUTO-START ON BOOT)
 echo "🔄 Setting up Gunicorn service..."
 sudo bash -c "cat > /etc/systemd/system/gunicorn.service << '\''EOS'\''
 [Unit]
@@ -138,7 +127,6 @@ sudo systemctl daemon-reload
 sudo systemctl enable gunicorn
 sudo systemctl start gunicorn
 
-#setup ngix
 echo "🌐 Setting up Nginx..."
 sudo bash -c "cat > /etc/nginx/sites-available/clinic-app << '\''EOS'\''
 server {
@@ -170,19 +158,16 @@ sudo nginx -t
 sudo systemctl enable nginx
 sudo systemctl restart nginx
 
-# 9. SETUP FIREWALL
 echo "🛡️ Configuring firewall..."
 sudo ufw allow 22
 sudo ufw allow 80
 sudo ufw allow 443
 echo "y" | sudo ufw enable
 
-# 10. SET PERMISSIONS
 echo "🔧 Setting permissions..."
 sudo chown -R ubuntu:www-data /home/ubuntu/clinic-booking-app
 sudo chmod -R 755 /home/ubuntu/clinic-booking-app
 
-# 11. ADD CRON FOR AUTO-START ON REBOOT
 echo "📅 Adding cron job for auto-start on reboot..."
 (crontab -l 2>/dev/null; echo "@reboot cd /home/ubuntu/clinic-booking-app/backend && source venv/bin/activate && nohup python3 app.py &") | crontab -
 
@@ -226,7 +211,7 @@ echo "✅ Auto-start configured! Instance will restart on reboot."
 echo "⏳ Waiting for instance to be ready..."
 aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region $AWS_REGION
 
-# Get public IP
+#Get public IP
 PUBLIC_IP=$(aws ec2 describe-instances \
     --instance-ids $INSTANCE_ID \
     --region $AWS_REGION \
