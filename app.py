@@ -74,8 +74,7 @@ class Appointment(db.Model):
     time = db.Column(db.String(50), nullable=False)
     status = db.Column(db.String(20), default='confirmed')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # NEW: Document upload fields (for S3)
+
     document_key = db.Column(db.String(500), nullable=True)  # S3 key
     document_name = db.Column(db.String(255), nullable=True)  # Original filename
     
