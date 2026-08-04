@@ -138,7 +138,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable gunicorn
 sudo systemctl start gunicorn
 
-# 8. SETUP NGINX
+#setup ngix
 echo "🌐 Setting up Nginx..."
 sudo bash -c "cat > /etc/nginx/sites-available/clinic-app << '\''EOS'\''
 server {
