@@ -21,7 +21,7 @@ cd /home/ec2-user
 
 
 echo "Step 5: Cloning your code..."
-git clone https://github.com/JC23245/clinic-app.git
+git clone https://github.com/Eryna1116/clinic-booking-system
 cd clinic-app
 
 
