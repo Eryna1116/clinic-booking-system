@@ -1,70 +1,35 @@
 import os
-from flask import Flask, request, redirect, url_for, flash, get_flashed_messages, jsonify, send_file
+from flask import Flask, request, redirect, url_for, flash, get_flashed_messages
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-import boto3
-from botocore.exceptions import ClientError
-import uuid
-from werkzeug.utils import secure_filename
 
+# =============================================
+# STEP 1: Create the Flask app
+# =============================================
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'clinic_secret_key_2026')
+app.secret_key = "clinic_secret_key_2026"
 
-# Create uploads folder if it doesn't exist
-UPLOAD_FOLDER = 'uploads'
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+# =============================================
+# STEP 2: Connect to PostgreSQL (NOT SQLite!)
+# =============================================
+# These values come from AWS (R1 will give them to you)
+# For now, we use fake values - we'll replace them later
+DB_HOST = os.environ.get('DB_HOST', 'localhost')
+DB_PORT = os.environ.get('DB_PORT', '5432')
+DB_NAME = os.environ.get('DB_NAME', 'clinicdb')
+DB_USER = os.environ.get('DB_USER', 'postgres')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
 
-class MockS3Client:
-    def __init__(self):
-        self.files = {}
-        print("✅ Mock S3 client initialized (files saved locally)")
-    
-    def upload_fileobj(self, fileobj, bucket, key, ExtraArgs=None):
-        file_path = os.path.join(UPLOAD_FOLDER, key)
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, 'wb') as f:
-            fileobj.seek(0)
-            f.write(fileobj.read())
-        self.files[key] = file_path
-        print(f"✅ Mock upload: {key}")
-        return True
-    
-    def generate_presigned_url(self, ClientMethod, Params, ExpiresIn):
-        key = Params['Key']
-        return f"/local_file/{key}"
-
-#DATABASE SETUP 
-#Check if running on EC2
-if os.environ.get('RUNNING_ON_EC2'):
-    # Use RDS PostgreSQL
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-        'DATABASE_URL',
-        'postgresql://username:password@rds-endpoint:5432/clinic_db'
-    )
-else:
-    # Use SQLite for local development
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///clinic.db'
-
+# This creates the connection string for PostgreSQL
+app.config['SQLALCHEMY_DATABASE_URI'] = (
+    f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# AWS S3 SETUP (FOR DOCUMENT STORAGE)
-# S3 client (use Mock S3 if no AWS credentials)
-if os.environ.get('AWS_ACCESS_KEY') and os.environ.get('AWS_SECRET_KEY'):
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id=os.environ.get('AWS_ACCESS_KEY'),
-        aws_secret_access_key=os.environ.get('AWS_SECRET_KEY'),
-        region_name=os.environ.get('AWS_REGION', 'us-east-1')
-    )
-    print("✅ S3 client initialized!")
-else:
-    s3_client = MockS3Client()
-
-S3_BUCKET = os.environ.get('S3_BUCKET', 'clinic-booking-app')
-
-#database
+# =============================================
+# STEP 3: Define what an "Appointment" looks like
+# =============================================
 class Appointment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     patient_name = db.Column(db.String(100), nullable=False)
@@ -75,24 +40,17 @@ class Appointment(db.Model):
     status = db.Column(db.String(20), default='confirmed')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    document_key = db.Column(db.String(500), nullable=True)  # S3 key
-    document_name = db.Column(db.String(255), nullable=True)  # Original filename
-    
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'patient_name': self.patient_name,
-            'patient_email': self.patient_email,
-            'doctor_name': self.doctor_name,
-            'date': self.date,
-            'time': self.time,
-            'status': self.status,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'document_name': self.document_name,
-            'document_url': f"https://{S3_BUCKET}.s3.amazonaws.com/{self.document_key}" if self.document_key else None
-        }
+# =============================================
+# STEP 4: HEALTH CHECK - CRITICAL FOR AWS!
+# =============================================
+# The Load Balancer checks this to know if your app is alive
+@app.route('/health')
+def health_check():
+    return 'OK', 200
 
-#HTML templates
+# =============================================
+# STEP 5: HTML HELPERS (same as your code)
+# =============================================
 def get_header():
     return '''<!DOCTYPE html>
 <html>
@@ -102,9 +60,6 @@ def get_header():
     <style>
         .container { max-width: 800px; }
         .flash-message { margin-top: 10px; }
-        .status-confirmed { color: #0d6efd; }
-        .status-cancelled { color: #dc3545; }
-        .status-completed { color: #198754; }
         .navbar-brand { font-weight: bold; }
     </style>
 </head>
@@ -143,12 +98,14 @@ def get_flash_messages():
         '''
     return html
 
-#routes
+# =============================================
+# STEP 6: HOMEPAGE
+# =============================================
 @app.route('/')
 def index():
     total = Appointment.query.count()
     html = get_header()
-    html += '''
+    html += f'''
     <div class="row">
         <div class="col-md-8 mx-auto">
             <div class="p-5 bg-white border rounded-3 text-center shadow-sm">
@@ -162,10 +119,13 @@ def index():
             </div>
         </div>
     </div>
-    '''.format(total=total)
+    '''
     html += get_footer()
     return html
 
+# =============================================
+# STEP 7: BOOKING PAGE
+# =============================================
 @app.route('/book', methods=['GET', 'POST'])
 def book():
     if request.method == 'POST':
@@ -180,7 +140,7 @@ def book():
                 flash('All fields are required!', 'danger')
                 return redirect(url_for('book'))
             
-            #check for duplicate booking
+            # Check for duplicate booking
             existing = Appointment.query.filter_by(
                 doctor_name=doctor,
                 date=date,
@@ -212,7 +172,7 @@ def book():
             flash(f'Error: {str(e)}', 'danger')
             return redirect(url_for('book'))
     
-    #GET request - show form
+    # GET request - show form
     html = get_header()
     html += get_flash_messages()
     html += '''
@@ -263,6 +223,9 @@ def book():
     html += get_footer()
     return html
 
+# =============================================
+# STEP 8: DASHBOARD
+# =============================================
 @app.route('/dashboard')
 def dashboard():
     all_appts = Appointment.query.order_by(Appointment.date, Appointment.time).all()
@@ -292,7 +255,6 @@ def dashboard():
                             <th>Date</th>
                             <th>Time</th>
                             <th>Status</th>
-                            <th>Document</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -301,20 +263,6 @@ def dashboard():
 
         for idx, appt in enumerate(all_appts, 1):
             status_badge = f'<span class="badge bg-{"primary" if appt.status == "confirmed" else "danger" if appt.status == "cancelled" else "success"}">{appt.status}</span>'
-            
-            # Document section - shows Upload button AND View button if document exists
-            if appt.document_key:
-                doc_section = f'''
-                    <div class="btn-group btn-group-sm">
-                        <a href="/download/{appt.id}" class="btn btn-info btn-sm">📄 View</a>
-                    </div>
-                '''
-            else:
-                doc_section = f'''
-                    <div class="btn-group btn-group-sm">
-                        <a href="/upload/{appt.id}" class="btn btn-warning btn-sm">📤 Upload</a>
-                    </div>
-                '''
 
             table_html += f'''
                         <tr>
@@ -324,11 +272,10 @@ def dashboard():
                             <td>{appt.date}</td>
                             <td>{appt.time}</td>
                             <td>{status_badge}</td>
-                            <td>{doc_section}</td>
                             <td>
                                 <div class="btn-group btn-group-sm">
-                                    <a href="/cancel/{appt.id}" class="btn btn-outline-danger" onclick="return confirm('Cancel this appointment?')">❌ Cancel</a>
-                                    <a href="/complete/{appt.id}" class="btn btn-outline-success" onclick="return confirm('Mark as completed?')">✅ Complete</a>
+                                    <a href="/cancel/{appt.id}" class="btn btn-outline-danger" onclick="return confirm('Cancel this appointment?')">Cancel</a>
+                                    <a href="/complete/{appt.id}" class="btn btn-outline-success" onclick="return confirm('Mark as completed?')">Complete</a>
                                 </div>
                             </td>
                         </tr>
@@ -338,7 +285,7 @@ def dashboard():
                     </tbody>
                     <tfoot class="table-light">
                         <tr>
-                            <td colspan="8" class="text-center text-muted">
+                            <td colspan="7" class="text-center text-muted">
                                 Total: {len(all_appts)} appointment(s)
                             </td>
                         </tr>
@@ -361,6 +308,9 @@ def dashboard():
     html += get_footer()
     return html
 
+# =============================================
+# STEP 9: CANCEL APPOINTMENT
+# =============================================
 @app.route('/cancel/<int:appt_id>')
 def cancel_appointment(appt_id):
     try:
@@ -383,6 +333,9 @@ def cancel_appointment(appt_id):
     
     return redirect(url_for('dashboard'))
 
+# =============================================
+# STEP 10: COMPLETE APPOINTMENT
+# =============================================
 @app.route('/complete/<int:appt_id>')
 def complete_appointment(appt_id):
     try:
@@ -405,120 +358,9 @@ def complete_appointment(appt_id):
     
     return redirect(url_for('dashboard'))
 
-@app.route('/upload/<int:appt_id>', methods=['GET', 'POST'])
-def upload_document(appt_id):
-    """Upload a document for an appointment to S3"""
-    appt = Appointment.query.get(appt_id)
-    if not appt:
-        flash('Appointment not found!', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    if request.method == 'POST':
-        if 'file' not in request.files:
-            flash('No file selected!', 'danger')
-            return redirect(request.url)
-        
-        file = request.files['file']
-        if file.filename == '':
-            flash('No file selected!', 'danger')
-            return redirect(request.url)
-        
-        if not s3_client:
-            flash('S3 is not configured!', 'danger')
-            return redirect(request.url)
-        
-        try:
-            #generate unique filename
-            filename = secure_filename(file.filename)
-            file_extension = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'pdf'
-            s3_key = f"appointments/{appt_id}/{uuid.uuid4()}.{file_extension}"
-            
-            #upload to S3
-            s3_client.upload_fileobj(
-                file,
-                S3_BUCKET,
-                s3_key,
-                ExtraArgs={'ContentType': file.content_type or 'application/octet-stream'}
-            )
-            
-            #update appointment with document info
-            appt.document_key = s3_key
-            appt.document_name = filename
-            db.session.commit()
-            
-            flash(f'✅ Document "{filename}" uploaded successfully!', 'success')
-            return redirect(url_for('dashboard'))
-            
-        except ClientError as e:
-            flash(f'❌ S3 Upload Error: {str(e)}', 'danger')
-        except Exception as e:
-            flash(f'❌ Error: {str(e)}', 'danger')
-    
-#GET request - show upload form
-    html = get_header()
-    html += get_flash_messages()
-    html += f'''
-    <div class="row">
-        <div class="col-md-6 mx-auto">
-            <div class="card shadow p-4">
-                <h3 class="mb-3">📄 Upload Document</h3>
-                <p><strong>Patient:</strong> {appt.patient_name}</p>
-                <p><strong>Doctor:</strong> {appt.doctor_name}</p>
-                <p><strong>Date:</strong> {appt.date} at {appt.time}</p>
-                
-                <form method="POST" enctype="multipart/form-data">
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Choose File</label>
-                        <input type="file" name="file" class="form-control" accept=".pdf,.doc,.docx,.jpg,.png" required>
-                        <small class="text-muted">Allowed: PDF, DOC, DOCX, JPG, PNG</small>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary w-100">📤 Upload Document</button>
-                    <a href="/dashboard" class="btn btn-outline-secondary w-100 mt-2">Cancel</a>
-                </form>
-            </div>
-        </div>
-    </div>
-    '''
-    html += get_footer()
-    return html
-
-@app.route('/download/<int:appt_id>')
-def download_document(appt_id):
-    """Download document from S3"""
-    appt = Appointment.query.get(appt_id)
-    if not appt or not appt.document_key:
-        flash('No document found for this appointment!', 'warning')
-        return redirect(url_for('dashboard'))
-    
-    if not s3_client:
-        flash('S3 is not configured!', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    try:
-        # Check if using Mock S3 (local file)
-        if S3_BUCKET == 'clinic-booking-app' and not os.environ.get('AWS_ACCESS_KEY'):
-            # For Mock S3 - serve local file
-            file_path = os.path.join(UPLOAD_FOLDER, appt.document_key)
-            if os.path.exists(file_path):
-                return send_file(file_path, as_attachment=True, download_name=appt.document_name)
-            else:
-                flash('File not found!', 'danger')
-                return redirect(url_for('dashboard'))
-        
-        # Real S3 - generate pre-signed URL
-        url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': S3_BUCKET, 'Key': appt.document_key},
-            ExpiresIn=60
-        )
-        return redirect(url)
-        
-    except ClientError as e:
-        flash(f'❌ Download Error: {str(e)}', 'danger')
-        return redirect(url_for('dashboard'))
-
-#API endpoints
+# =============================================
+# STEP 11: API ENDPOINTS (for monitoring)
+# =============================================
 @app.route('/api/appointments')
 def api_get_appointments():
     appointments = Appointment.query.all()
@@ -529,13 +371,10 @@ def api_get_appointments():
             {
                 'id': a.id,
                 'patient_name': a.patient_name,
-                'patient_email': a.patient_email,
                 'doctor_name': a.doctor_name,
                 'date': a.date,
                 'time': a.time,
-                'status': a.status,
-                'document_name': a.document_name,
-                'document_url': f"https://{S3_BUCKET}.s3.amazonaws.com/{a.document_key}" if a.document_key else None
+                'status': a.status
             } for a in appointments
         ]
     }
@@ -555,47 +394,16 @@ def api_stats():
         'completed': completed
     }
 
-@app.route('/api/health')
-def health_check():
-    """Health check endpoint for load balancer"""
-    return jsonify({
-        'status': 'healthy',
-        'database': 'connected',
-        's3': 'configured' if s3_client else 'not configured'
-    })
-
-#environment variable check
-@app.route('/api/env')
-def env_check():
-    """Check environment variables (for debugging)"""
-    return {
-        'running_on_ec2': os.environ.get('RUNNING_ON_EC2', 'false'),
-        'database_url': 'configured' if os.environ.get('DATABASE_URL') else 'not configured',
-        's3_bucket': os.environ.get('S3_BUCKET', 'not configured'),
-        'aws_region': os.environ.get('AWS_REGION', 'not configured')
-    }
-
-#run
+# =============================================
+# STEP 12: RUN THE APP
+# =============================================
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-        
-        #to check if running on EC2
-        if os.environ.get('RUNNING_ON_EC2'):
-            print("=" * 50)
-            print("🚀 RUNNING ON EC2")
-            print("=" * 50)
-        else:
-            print("=" * 50)
-            print("💻 RUNNING LOCALLY")
-            print("=" * 50)
-        
-        print("✅ Database created successfully!")
-        print("🌐 Server running at: http://localhost:5000")
-        print("📊 Dashboard: http://localhost:5000/dashboard")
-        print("📅 Book: http://localhost:5000/book")
-        print("🔌 API: http://localhost:5000/api/appointments")
-        print("📄 Upload: http://localhost:5000/upload/<appt_id>")
+        print("=" * 50)
+        print("✅ Database tables created!")
+        print("🌐 Server running on port 5000")
+        print("❤️ Health check: /health")
         print("=" * 50)
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
